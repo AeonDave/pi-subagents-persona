@@ -1,0 +1,41 @@
+{
+  "name": "pi-subagents-persona",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "A Pi companion extension to pi-subagents: switchable supervisor personas (system prompt + optional model/effort + opencode-style delegation/tool/skill allowlists), bound to a key and shown in the footer.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-subagents",
+    "persona",
+    "subagents",
+    "supervisor"
+  ],
+  "license": "MIT",
+  "files": [
+    "src",
+    "personas",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/permissions.test.ts test/persona.test.ts test/subagent.test.ts test/seed.test.ts test/integration.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
