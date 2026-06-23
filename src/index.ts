@@ -213,8 +213,15 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 				setStatus(ctx, undefined);
 				return;
 			}
-			const idx = active ? list.findIndex((p) => p.name === active!.name) : -1;
-			await activate(list[(idx + 1) % list.length], ctx);
+			// Cycle through every persona PLUS a "no persona" slot, so the key also
+			// returns to the default supervisor (none) before wrapping to the first.
+			// Order: none → list[0] → … → list[n-1] → none → … A stale `active` not in
+			// the list reads as -1 (none), so the next press starts a clean cycle.
+			const current = active; // capture so TS narrows it inside the closure
+			const idx = current ? list.findIndex((p) => p.name === current.name) : -1;
+			const next = idx + 1; // -1 (none) → first; last persona → list.length (none)
+			if (next >= list.length) await deactivate(ctx);
+			else await activate(list[next], ctx);
 		},
 	});
 
@@ -246,7 +253,12 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 				if (arg === "list" || !ctx.hasUI) {
 					const lines = list.map((p) => `${p.name === active?.name ? "▶ " : "  "}${p.label} (${p.name})`);
 					ctx.ui.notify(
-						[`Personas (active: ${active?.label ?? "none"}):`, ...lines, "", "Switch: /persona <name> | clear: /persona off"].join("\n"),
+						[
+							`Personas (active: ${active?.label ?? "none"}):`,
+							...lines,
+							"",
+							`Cycle key: ${getKeybinding()} | switch: /persona <name> | clear: /persona off`,
+						].join("\n"),
 						"info",
 					);
 					return;

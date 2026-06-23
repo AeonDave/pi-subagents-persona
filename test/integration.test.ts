@@ -55,6 +55,8 @@ function makeHarness() {
 	return {
 		fire: (event: string, e: any) => handlers.get(event)?.(e, ctx),
 		runCommand: (args: string) => commands.get("persona")?.(args, ctx),
+		// Invoke the registered cycle shortcut's handler (shortcuts[0] = [key, {handler}]).
+		cycle: () => (shortcuts[0] as [string, { handler: (c: any) => any }])?.[1]?.handler(ctx),
 		get state() { return { activeTools, statuses, notes, thinking, model, commandCount: commands.size, shortcutCount: shortcuts.length }; },
 	};
 }
@@ -254,6 +256,32 @@ test("PI_PERSONA_DISABLE prevents registering persona controls", async () => {
 	assert.equal(h.state.statuses.persona, undefined);
 	assert.ok(h.state.activeTools.includes("experimental_tool"));
 	delete process.env.PI_PERSONA_DISABLE;
+});
+
+test("cycle key includes a 'no persona' slot: none → personas → none → wrap", async () => {
+	setupEnv(); // no default → session starts with NO active persona (the base case)
+	const h = makeHarness();
+	await h.fire("session_start", { type: "session_start", reason: "startup" });
+	assert.equal(h.state.statuses.persona, undefined); // base case present at start
+
+	// personas sorted by label: locked (🔒) then free (🟢)
+	await h.cycle();
+	assert.equal(h.state.statuses.persona, "🔒 Locked");
+	assert.ok(!h.state.activeTools.includes("experimental_tool")); // locked restricts tools
+
+	await h.cycle();
+	assert.equal(h.state.statuses.persona, "🟢 Free");
+
+	await h.cycle(); // last persona → back to NO persona (the base case the user wanted)
+	assert.equal(h.state.statuses.persona, undefined);
+	assert.ok(h.state.activeTools.includes("experimental_tool")); // tools restored
+	assert.equal(
+		h.fire("before_agent_start", { type: "before_agent_start", systemPrompt: "BASE", prompt: "x", systemPromptOptions: {} }),
+		undefined, // no persona → no prompt injection
+	);
+
+	await h.cycle(); // wraps back to the first persona
+	assert.equal(h.state.statuses.persona, "🔒 Locked");
 });
 
 test("an operator file (no persona:true) is not loaded as a persona", async () => {

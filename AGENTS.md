@@ -32,7 +32,7 @@ pi -e ./src/index.ts              # live-load in Pi for manual testing
   ONLY files with `persona: true`) + `seedPersonas` (idempotent, non-destructive
   copy of the bundle into the agents dir).
 - `src/index.ts` — the factory: seed the bundle once on `session_start`, then
-  `registerShortcut(ctrl+shift+p)` + `/persona` command + `before_agent_start`
+  `registerShortcut(f8)` + `/persona` command + `before_agent_start`
   (inject systemPrompt) + `tool_call` (block disallowed `subagent` delegations) +
   `tool_result` (filter the `list` roster) + `setStatus`/`setModel`/
   `setThinkingLevel`/`setActiveTools` on activation.

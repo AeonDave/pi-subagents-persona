@@ -6,7 +6,7 @@
  * | `PI_PERSONA_DISABLE`          | _(off)_       | Any non-empty value disables the extension. |
  * | `PI_PERSONA_DIRS`             | _(see below)_ | Extra persona dirs (`;` or `,` separated), highest priority. |
  * | `PI_PERSONA_DEFAULT`          | _(none)_      | Persona name to activate on session start. |
- * | `PI_PERSONA_KEY`             | `ctrl+shift+p`| Keybinding that cycles personas. |
+ * | `PI_PERSONA_KEY`             | `f8`          | Keybinding that cycles personas. |
  * | `PI_PERSONA_DELEGATE_DEFAULT` | `allow`       | What an ABSENT `delegate` block means: `allow` (sees everyone) or `deny` (lockdown). |
  * | `PI_PERSONA_SEED`            | `on`          | Seed bundled personas into the agents dir on startup; `off` disables. |
  * | `PI_PERSONA_SEED_DIR`        | `~/.pi/agent/agents` | Target dir for seeding (also the primary load dir). |
@@ -27,7 +27,14 @@ export function isDisabled(): boolean {
 }
 
 export function getKeybinding(): string {
-	return process.env.PI_PERSONA_KEY?.trim() || "ctrl+shift+p";
+	// `f8`, not a modifier combo: every `ctrl+shift+<letter>` we tried got grabbed by
+	// the terminal before reaching Pi (WT/iTerm/VS Code each claim a different set —
+	// selectAll, command palette, delete-line, …), and modifier combos also need the
+	// kitty/win32 keyboard protocol to be distinguishable. Function keys dodge all of
+	// it: Pi binds none of them, terminals don't intercept them (only F11), and they
+	// send a standard escape sequence with no protocol negotiation. Override with
+	// PI_PERSONA_KEY if you want a combo and your terminal leaves one free.
+	return process.env.PI_PERSONA_KEY?.trim() || "f8";
 }
 
 export function getDefaultPersonaName(): string | undefined {
