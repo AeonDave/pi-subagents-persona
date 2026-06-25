@@ -43,8 +43,9 @@ pi -e ./src/index.ts              # live-load in Pi for manual testing
 
 - **One marker: `persona: true`.** A file is a switchable persona iff it has
   `persona: true`; everything else in the agents dir is a plain pi-subagents agent
-  (e.g. the bundled `worker` operator) that this extension ignores for the picker
-  but seeds for delegation. There is no separate `hidden` flag (it would overlap).
+  (an operator) that this extension ignores for the picker but seeds for delegation.
+  This package bundles only supervisor personas — they author ad-hoc subagents on the
+  fly, so no generic operator ships. There is no separate `hidden` flag (it would overlap).
 - **Persona = top-level supervisor identity.** Injected via
   `before_agent_start.systemPrompt`; default `append` (augments Pi's base prompt),
   `replace` only for self-complete personas. Do not reimplement pi-subagents

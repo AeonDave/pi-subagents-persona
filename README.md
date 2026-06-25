@@ -14,7 +14,7 @@ switched with a key or `/persona`, and shown in the footer.
 > pi install npm:pi-subagents
 > pi install npm:pi-intercom
 > ```
-> The delegation allowlist and the seeded `worker` operator only do anything with
+> The delegation allowlist and the seeded supervisor personas only do anything with
 > pi-subagents present. **`pi-intercom` is what turns a supervisor persona into an
 > actual coach**: it carries `contact_supervisor` escalations from running children
 > and lets `resume` steer a still-running async child. Without it, delegation is
@@ -51,7 +51,7 @@ thinking: high
 systemPromptMode: append          # append (default) | replace
 tools: read, grep, bash, subagent, web_search   # supervisor's active tools (absent → all)
 delegate:                         # which pi-subagents agents this persona may launch
-  allow: ["worker", "scout"]      #   absent block → allow all ("sees everyone")
+  allow: ["scout", "researcher"]   #   absent block → allow all ("sees everyone")
   deny:  ["experimental-*"]
 skills: [code-review]             # advisory skill scope (absent → all)
 ---
@@ -59,9 +59,10 @@ You are Reviewer: ...             # body = the supervisor system prompt
 ```
 
 > **One marker, no overlap.** A file is a switchable supervisor persona **iff it
-> has `persona: true`**. Files without it (e.g. the bundled `worker`) are plain
-> pi-subagents *operators* — seeded so supervisors can delegate to them, but never
-> shown in the persona picker. There is no separate `hidden` flag.
+> has `persona: true`**. A file without it is a plain pi-subagents *operator* —
+> seeded for delegation, never shown in the persona picker (there is no separate
+> `hidden` flag). This package bundles only supervisor personas; they build the
+> executors they need as **ad-hoc subagents on the fly**, so no generic operator ships.
 
 The frontmatter is a small YAML **subset** (scalars, inline `[a, b]` and block
 `- a` lists, one level of nested `allow`/`deny` maps) — not a full YAML engine.
@@ -83,9 +84,9 @@ For `delegate`, `tools`, `skills` — each `{ allow?, deny? }` of glob patterns
 
 > **A persona never removes pi-subagents power by default — it's a companion.**
 > Without a `delegate` block (or with `deny`-only / `allow: ["*"]`), the
-> supervisor keeps full delegation: it chooses, per task, to delegate to a
-> **persona/role subagent** (e.g. `worker`), a **native pi-subagents agent**
-> (scout, planner, …), or an **ad-hoc subagent it authors on the fly**. Use
+> supervisor keeps full delegation: per task it **authors an ad-hoc subagent on the
+> fly** (its default), or delegates to a **native pi-subagents agent** (scout,
+> planner, …) or another persona when one already fits. Use
 > `delegate.allow` only when you deliberately want a locked-down supervisor — then
 > its fleet *is* that allowlist. Likewise an absent `tools` block keeps every tool.
 >
@@ -103,7 +104,7 @@ For `delegate`, `tools`, `skills` — each `{ allow?, deny? }` of glob patterns
 | Model / effort (optional) | `setModel` / `setThinkingLevel` — only if the persona declares them |
 | Tool allowlist | `setActiveTools(filter(getAllTools, persona.tools))`; restored on clear |
 | Delegation allowlist | filter `subagent {action:"list"}` result (supervisor only *sees* allowed) **and** block disallowed `subagent` delegations |
-| Operators (e.g. `worker`) | a file without `persona: true` — seeded for delegation, never in the picker |
+| Operators | a file without `persona: true` — seeded for delegation, never in the picker (this package bundles none; supervisors author ad-hoc subagents) |
 
 > The default is **`f8`**, not a modifier combo. A `ctrl+shift+<letter>` has to
 > dodge Pi's **reserved** keys (`shift+tab` = effort, `ctrl+p`/`shift+ctrl+p` =
@@ -116,15 +117,19 @@ For `delegate`, `tools`, `skills` — each `{ allow?, deny? }` of glob patterns
 
 ## Seeding
 
-On the first session, the extension **seeds its bundled personas/operators into
-your Pi agents dir** (`~/.pi/agent/agents`) — only files that don't already exist
-(it never overwrites your edits). This makes them discoverable by pi-subagents
-(so supervisors can delegate to `worker`, and you can `/run` them) and is where
-the extension loads personas from. Disable with `PI_PERSONA_SEED=off`.
+On the first session, the extension **seeds its bundled personas into your Pi
+agents dir** (`~/.pi/agent/agents`) — only files that don't already exist (it never
+overwrites your edits). This makes them discoverable (so you can `/run` them) and is
+where the extension loads personas from. Disable with `PI_PERSONA_SEED=off`.
 
-Bundled: `planner`, `reviewer`, `researcher` (supervisor personas) and `worker`
-(a hidden operator the supervisors delegate to, verticalized by inherited or
-task-supplied skills).
+Bundled: `planner`, `coder`, `reviewer`, `researcher` (supervisor personas). No
+generic operator ships — each supervisor **authors task-specific ad-hoc subagents on
+the fly** (cold packet + skill plan + ad-hoc model) for whatever a step needs.
+
+All supervisor personas keep delegated children on the **same provider** as the
+supervisor's current model by default (varying only tier/effort per task), to avoid
+cross-provider tool/format mismatches; they switch provider only on explicit user
+request.
 
 ## Install & use
 
