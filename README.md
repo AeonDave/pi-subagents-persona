@@ -149,8 +149,10 @@ pi list
 |---------|---------|---------|
 | `PI_PERSONA_DISABLE` | _(off)_ | Any non-empty value disables the extension. |
 | `PI_PERSONA_DIRS` | _(none)_ | Extra persona dirs (`;`/`,` separated), highest priority. |
-| `PI_PERSONA_DEFAULT` | _(none)_ | Persona name to activate on session start. |
+| `PI_PERSONA_DEFAULT` | _(none)_ | Persona name to activate on session start (pins it; overrides the remembered one). |
 | `PI_PERSONA_KEY` | `f8` | Keybinding that cycles personas. |
+| `PI_PERSONA_PERSIST` | `on` | Remember the last selected persona and restore it (already visible) on restart; `off` disables. |
+| `PI_PERSONA_STATE_FILE` | `~/.pi/agent/persona/state.json` | Where the remembered selection is stored (the plugin's own folder). |
 | `PI_PERSONA_DELEGATE_DEFAULT` | `allow` | Meaning of an ABSENT `delegate` block: `allow` (sees everyone) or `deny` (lockdown). |
 | `PI_PERSONA_SEED` | `on` | Seed bundled personas/operators into the agents dir on startup; `off` disables. |
 | `PI_PERSONA_SEED_DIR` | `~/.pi/agent/agents` | Seed target + primary load dir. |

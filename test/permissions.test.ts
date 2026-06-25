@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { filterAllowed, globToRegExp, isAllowed, type Permission } from "../src/permissions.ts";
+import { globToRegExp, isAllowed, type Permission } from "../src/permissions.ts";
 
 test("globToRegExp: * and ? match, regex specials are escaped, anchored", () => {
 	assert.ok(globToRegExp("code-*").test("code-reviewer"));
@@ -38,11 +38,4 @@ test("isAllowed: deny wins over allow", () => {
 	const perm: Permission = { allow: ["*"], deny: ["secret-*"] };
 	assert.equal(isAllowed("normal", perm), true);
 	assert.equal(isAllowed("secret-agent", perm), false);
-});
-
-test("filterAllowed preserves order and applies the permission", () => {
-	const perm: Permission = { allow: ["a*", "c"] };
-	assert.deepEqual(filterAllowed(["a1", "b", "c", "a2", "d"], perm), ["a1", "c", "a2"]);
-	// absent perm with defaultAllow=false drops everything (delegate lockdown)
-	assert.deepEqual(filterAllowed(["a", "b"], undefined, false), []);
 });

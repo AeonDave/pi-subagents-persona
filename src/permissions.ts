@@ -49,8 +49,3 @@ export function isAllowed(name: string, perm: Permission | undefined, defaultAll
 	if (perm.allow !== undefined) return matchesAny(name, perm.allow); // allowlist mode
 	return true; // denylist-only (allow not specified) → allow unless denied above
 }
-
-/** Filter `names` to those allowed by `perm` (preserves order). */
-export function filterAllowed(names: readonly string[], perm: Permission | undefined, defaultAllow = true): string[] {
-	return names.filter((n) => isAllowed(n, perm, defaultAllow));
-}

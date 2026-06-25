@@ -5,7 +5,15 @@
  * A persona is applied to the TOP-LEVEL session (you talk to Pi and Pi *is* the
  * supervisor), and switching it (a key or `/persona`) swaps:
  *   - the supervisor system prompt (injected at `before_agent_start`);
- *   - optionally the model and thinking level (only if the persona specifies them);
+ *   - optionally the model and thinking level (only if the persona specifies them;
+ *     the pre-persona baseline is snapshotted and restored when a later persona
+ *     omits it or on deactivate — symmetric with the tool allowlist);
+ *
+ * The last explicit selection is remembered in a small state file (see
+ * `PI_PERSONA_PERSIST`) and restored on the next start, so Pi comes up already
+ * wearing the persona you left it in. Session-start restore only READS the file;
+ * only user gestures (key / `/persona`) write it.
+ *
  *   - the active tool set (when the persona declares a `tools` allowlist);
  *   - the delegation allowlist — which pi-subagents agents this persona may
  *     launch — enforced by filtering `subagent {action:"list"}` results AND
@@ -29,9 +37,12 @@ import {
 	getKeybinding,
 	getPersonaDirs,
 	isDisabled,
+	isPersistEnabled,
 	isSeedEnabled,
 	loadPersonas,
+	readLastPersona,
 	seedPersonas,
+	writeLastPersona,
 } from "./config.ts";
 import { composeSystemPrompt, type Persona } from "./persona.ts";
 import { isAllowed } from "./permissions.ts";
@@ -47,7 +58,13 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 
 	let personas: Persona[] = [];
 	let active: Persona | undefined;
+	// Each axis a persona can override is snapshotted on the FIRST override and
+	// restored when a following persona omits it (or on deactivate) — symmetric.
 	let toolsRestricted = false;
+	let baselineModel: Model<any> | undefined;
+	let modelOverridden = false;
+	let baselineThinking: Parameters<ExtensionAPI["setThinkingLevel"]>[0] | undefined;
+	let thinkingOverridden = false;
 	let seeded = false;
 	const delegateDefaultAllow = getDelegateDefaultAllow();
 
@@ -71,39 +88,99 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 		}
 	}
 
+	/** Restore the full tool registry if a persona had restricted it. */
+	function restoreTools(): void {
+		if (!toolsRestricted) return;
+		try {
+			pi.setActiveTools(allToolNames());
+		} catch {
+			/* ignore */
+		}
+		toolsRestricted = false;
+	}
+
+	/** Restore the pre-persona model if a persona had overridden it. */
+	async function restoreModel(): Promise<void> {
+		if (!modelOverridden) return;
+		modelOverridden = false;
+		const baseline = baselineModel;
+		baselineModel = undefined;
+		if (baseline) {
+			try {
+				await pi.setModel(baseline);
+			} catch {
+				/* keep current on failure */
+			}
+		}
+	}
+
+	/** Restore the pre-persona thinking level if a persona had overridden it. */
+	function restoreThinking(): void {
+		if (!thinkingOverridden) return;
+		thinkingOverridden = false;
+		const baseline = baselineThinking;
+		baselineThinking = undefined;
+		if (baseline) {
+			try {
+				pi.setThinkingLevel(baseline);
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+
 	/** Apply a persona's side effects (status, optional model/thinking, tools). */
 	async function applyPersona(persona: Persona, ctx: ExtensionContext): Promise<void> {
 		setStatus(ctx, persona.label);
 
+		// Model: override when declared (snapshotting the session baseline once);
+		// restore that baseline when a following persona omits it.
 		if (persona.model) {
 			const model = ctx.modelRegistry
 				.getAll()
 				.find((m: Model<any>) => `${m.provider}/${m.id}` === persona.model || m.id === persona.model);
 			if (model) {
+				if (!modelOverridden) {
+					baselineModel = ctx.model;
+					modelOverridden = true;
+				}
 				try {
 					await pi.setModel(model);
 				} catch {
 					// keep current model on failure
 				}
 			} else {
+				// declared-but-unavailable → keep current (no override, no restore)
 				try {
 					ctx.ui.notify(`persona ${persona.name}: model "${persona.model}" not found — keeping current`, "warning");
 				} catch {
 					/* ignore */
 				}
 			}
+		} else {
+			await restoreModel();
 		}
 
-		if (persona.thinking && VALID_THINKING.has(persona.thinking)) {
-			try {
-				pi.setThinkingLevel(persona.thinking as Parameters<ExtensionAPI["setThinkingLevel"]>[0]);
-			} catch {
-				/* clamped/ignored */
+		// Thinking: same snapshot/restore discipline as model.
+		if (persona.thinking) {
+			if (VALID_THINKING.has(persona.thinking)) {
+				if (!thinkingOverridden) {
+					baselineThinking = pi.getThinkingLevel();
+					thinkingOverridden = true;
+				}
+				try {
+					pi.setThinkingLevel(persona.thinking as Parameters<ExtensionAPI["setThinkingLevel"]>[0]);
+				} catch {
+					/* clamped/ignored */
+				}
 			}
+			// declared-but-invalid → keep current (no restore), like a model not found
+		} else {
+			restoreThinking();
 		}
 
-		// Tools: restrict when the persona declares an allowlist; restore all when
-		// a non-restricting persona follows a restricting one.
+		// Tools: restrict when the persona declares an allowlist; restore the full
+		// registry when a non-restricting persona follows a restricting one.
 		if (persona.tools) {
 			const names = allToolNames();
 			const allowed = names.filter((n) => isAllowed(n, persona.tools));
@@ -113,13 +190,8 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 			} catch {
 				/* ignore */
 			}
-		} else if (toolsRestricted) {
-			try {
-				pi.setActiveTools(allToolNames());
-			} catch {
-				/* ignore */
-			}
-			toolsRestricted = false;
+		} else {
+			restoreTools();
 		}
 	}
 
@@ -131,20 +203,20 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 	async function deactivate(ctx: ExtensionContext): Promise<void> {
 		active = undefined;
 		setStatus(ctx, undefined);
-		if (toolsRestricted) {
-			try {
-				pi.setActiveTools(allToolNames());
-			} catch {
-				/* ignore */
-			}
-			toolsRestricted = false;
-		}
+		restoreTools();
+		await restoreModel();
+		restoreThinking();
 	}
 
 	function reload(cwd: string): string[] {
 		const { personas: loaded, errors } = loadPersonas(getPersonaDirs(cwd));
 		personas = loaded;
 		return errors;
+	}
+
+	/** Remember an explicit user selection (persona name, or `undefined` for none). */
+	function persist(name: string | undefined): void {
+		if (isPersistEnabled()) writeLastPersona(name);
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -157,7 +229,9 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 		const previousActiveName = active?.name;
 		reload(ctx.cwd);
 		const wanted = getDefaultPersonaName();
-		const target = wanted ? find(wanted) : previousActiveName ? find(previousActiveName) : undefined;
+		// Restore order: env pin > in-process carry > remembered last selection on disk.
+		const remembered = previousActiveName ?? (isPersistEnabled() ? readLastPersona() : undefined);
+		const target = wanted ? find(wanted) : remembered ? find(remembered) : undefined;
 		if (target) await activate(target, ctx);
 		else if (previousActiveName) await deactivate(ctx);
 		else setStatus(ctx, active?.label);
@@ -220,8 +294,13 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 			const current = active; // capture so TS narrows it inside the closure
 			const idx = current ? list.findIndex((p) => p.name === current.name) : -1;
 			const next = idx + 1; // -1 (none) → first; last persona → list.length (none)
-			if (next >= list.length) await deactivate(ctx);
-			else await activate(list[next], ctx);
+			if (next >= list.length) {
+				await deactivate(ctx);
+				persist(undefined);
+			} else {
+				await activate(list[next], ctx);
+				persist(list[next].name);
+			}
 		},
 	});
 
@@ -231,6 +310,7 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 			const arg = args.trim();
 			if (arg === "off" || arg === "none") {
 				await deactivate(ctx);
+				persist(undefined);
 				ctx.ui.notify("persona: cleared (default supervisor)", "info");
 				return;
 			}
@@ -266,7 +346,10 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 				const choice = await ctx.ui.select("Select persona", list.map((p) => p.label));
 				if (!choice) return;
 				const chosen = list.find((p) => p.label === choice);
-				if (chosen) await activate(chosen, ctx);
+				if (chosen) {
+					await activate(chosen, ctx);
+					persist(chosen.name);
+				}
 				return;
 			}
 			const persona = find(arg);
@@ -275,6 +358,7 @@ export default function subagentsPersona(pi: ExtensionAPI) {
 				return;
 			}
 			await activate(persona, ctx);
+			persist(persona.name);
 			ctx.ui.notify(`persona: ${persona.label} active`, "info");
 		},
 	});

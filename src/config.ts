@@ -10,6 +10,8 @@
  * | `PI_PERSONA_DELEGATE_DEFAULT` | `allow`       | What an ABSENT `delegate` block means: `allow` (sees everyone) or `deny` (lockdown). |
  * | `PI_PERSONA_SEED`            | `on`          | Seed bundled personas into the agents dir on startup; `off` disables. |
  * | `PI_PERSONA_SEED_DIR`        | `~/.pi/agent/agents` | Target dir for seeding (also the primary load dir). |
+ * | `PI_PERSONA_PERSIST`        | `on`          | Remember the last selected persona and restore it on restart; `off` disables. |
+ * | `PI_PERSONA_STATE_FILE`     | `~/.pi/agent/persona/state.json` | Where the remembered selection is stored (the plugin's own folder). |
  *
  * Personas live alongside pi-subagents agents in `~/.pi/agent/agents` (user) and
  * `<cwd>/.pi/agents` (project). Only files with `persona: true` are loaded as
@@ -17,9 +19,9 @@
  * `PI_PERSONA_DIRS` wins over both.
  */
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parsePersona, type Persona } from "./persona.ts";
 
 export function isDisabled(): boolean {
@@ -53,6 +55,41 @@ export function getAgentsDir(): string {
 
 export function isSeedEnabled(): boolean {
 	return process.env.PI_PERSONA_SEED?.trim().toLowerCase() !== "off";
+}
+
+/** Remember the last selected persona across restarts unless `…_PERSIST=off`. */
+export function isPersistEnabled(): boolean {
+	return process.env.PI_PERSONA_PERSIST?.trim().toLowerCase() !== "off";
+}
+
+/** File that stores the remembered persona selection. */
+export function getStateFile(): string {
+	// Each plugin keeps its own folder under ~/.pi/agent; the dir is created on write.
+	return process.env.PI_PERSONA_STATE_FILE?.trim() || join(homedir(), ".pi", "agent", "persona", "state.json");
+}
+
+/**
+ * Read the remembered persona name, or `undefined` when persistence is empty,
+ * disabled-by-content, or the file is missing/corrupt (best-effort, never throws).
+ */
+export function readLastPersona(): string | undefined {
+	try {
+		const data = JSON.parse(readFileSync(getStateFile(), "utf8")) as { active?: unknown };
+		return typeof data.active === "string" && data.active.trim() ? data.active.trim() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Persist the selected persona name (or `undefined`/none) — best-effort, never throws. */
+export function writeLastPersona(name: string | undefined): void {
+	try {
+		const file = getStateFile();
+		mkdirSync(dirname(file), { recursive: true });
+		writeFileSync(file, `${JSON.stringify({ active: name ?? null }, null, 2)}\n`, "utf8");
+	} catch {
+		// best-effort: a non-writable state dir must not break persona switching
+	}
 }
 
 /** Persona directories in increasing priority (later overrides earlier by name). */

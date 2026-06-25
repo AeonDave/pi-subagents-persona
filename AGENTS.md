@@ -30,7 +30,9 @@ pi -e ./src/index.ts              # live-load in Pi for manual testing
 - `src/config.ts` — env-driven config + persona discovery/loading (`loadPersonas`
   from `~/.pi/agent/agents`, `<project>/.pi/agents`, `PI_PERSONA_DIRS`; returns
   ONLY files with `persona: true`) + `seedPersonas` (idempotent, non-destructive
-  copy of the bundle into the agents dir).
+  copy of the bundle into the agents dir) + last-selection persistence
+  (`readLastPersona`/`writeLastPersona`/`isPersistEnabled`/`getStateFile`, a small
+  `~/.pi/agent/persona/state.json` remembering the last explicit pick across restarts).
 - `src/index.ts` — the factory: seed the bundle once on `session_start`, then
   `registerShortcut(f8)` + `/persona` command + `before_agent_start`
   (inject systemPrompt) + `tool_call` (block disallowed `subagent` delegations) +
@@ -51,8 +53,13 @@ pi -e ./src/index.ts              # live-load in Pi for manual testing
   agents dir only when absent — never overwrites user edits. `tools`/`skills` in
   bundled files are FLAT (comma-separated) so the same file is valid as both a
   persona and a pi-subagents agent; `delegate` is nested and read only here.
-- **model/thinking are optional.** Apply `setModel`/`setThinkingLevel` ONLY when
-  the persona declares them; otherwise leave the user's/session's choice.
+- **model/thinking are optional but symmetric with tools.** When a persona
+  declares model/thinking, snapshot the session baseline ONCE and apply the
+  override; when a following persona omits it — or on deactivate — restore the
+  snapshot (`restoreModel`/`restoreThinking`, mirroring `restoreTools`). A persona
+  that declares neither never touches them. A declared model that isn't in the
+  registry (or a bad thinking level) keeps the current value — no override, no
+  restore.
 - **Companion: never strip pi-subagents power by default.** A missing
   `tools`/`skills`/`delegate` block ⇒ allow all. With no `delegate` (or `deny`-only),
   the supervisor keeps full delegation — persona-subagents, native agents, AND

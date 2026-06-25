@@ -11,6 +11,8 @@ const FIXTURES = join(import.meta.dirname, "fixtures");
 function setupEnv(defaultPersona?: string, seedDir = FIXTURES) {
 	process.env.PI_PERSONA_SEED = "off";
 	process.env.PI_PERSONA_SEED_DIR = seedDir; // getPersonaDirs[0] = fixtures/override
+	process.env.PI_PERSONA_PERSIST = "off"; // never touch the real ~/.pi state file in tests
+	delete process.env.PI_PERSONA_STATE_FILE;
 	delete process.env.PI_PERSONA_DIRS;
 	delete process.env.PI_PERSONA_DISABLE;
 	delete process.env.PI_PERSONA_DELEGATE_DEFAULT;
@@ -38,6 +40,7 @@ function makeHarness() {
 		setActiveTools: (names: string[]) => { activeTools = names; },
 		setModel: async (m: any) => { model = m; return true; },
 		setThinkingLevel: (l: string) => { thinking = l; },
+		getThinkingLevel: () => thinking,
 	} as any;
 
 	const ctx = {
@@ -49,6 +52,7 @@ function makeHarness() {
 			select: async () => undefined,
 		},
 		modelRegistry: { getAll: () => [{ provider: "claude-pro-max-native", id: "claude-opus-4-8" }] },
+		get model() { return model; },
 	} as any;
 
 	subagentsPersona(pi);
@@ -282,6 +286,103 @@ test("cycle key includes a 'no persona' slot: none → personas → none → wra
 
 	await h.cycle(); // wraps back to the first persona
 	assert.equal(h.state.statuses.persona, "🔒 Locked");
+});
+
+test("persistence: a user selection is remembered and restored on the next start", async () => {
+	const stateFile = join(mkdtempSync(join(tmpdir(), "persona-state-")), "persona-state.json");
+	try {
+		setupEnv(); // no env default
+		process.env.PI_PERSONA_PERSIST = "on";
+		process.env.PI_PERSONA_STATE_FILE = stateFile;
+
+		// First "process": start clean (no persona), user selects one via the command.
+		const h1 = makeHarness();
+		await h1.fire("session_start", { type: "session_start", reason: "startup" });
+		assert.equal(h1.state.statuses.persona, undefined);
+		await h1.runCommand("locked");
+		assert.equal(h1.state.statuses.persona, "🔒 Locked");
+
+		// Second "process": fresh factory closure, same state file → restored & visible.
+		const h2 = makeHarness();
+		await h2.fire("session_start", { type: "session_start", reason: "startup" });
+		assert.equal(h2.state.statuses.persona, "🔒 Locked");
+		assert.ok(!h2.state.activeTools.includes("experimental_tool")); // restored persona's tool allowlist
+
+		// Turning it off is also remembered: next start comes up clean.
+		await h2.runCommand("off");
+		const h3 = makeHarness();
+		await h3.fire("session_start", { type: "session_start", reason: "startup" });
+		assert.equal(h3.state.statuses.persona, undefined);
+	} finally {
+		rmSync(stateFile, { force: true });
+		delete process.env.PI_PERSONA_STATE_FILE;
+	}
+});
+
+test("persistence: env PI_PERSONA_DEFAULT overrides the remembered selection", async () => {
+	const stateFile = join(mkdtempSync(join(tmpdir(), "persona-state-")), "persona-state.json");
+	try {
+		setupEnv("locked");
+		process.env.PI_PERSONA_PERSIST = "on";
+		process.env.PI_PERSONA_STATE_FILE = stateFile;
+		writeFileSync(stateFile, JSON.stringify({ active: "free" }));
+
+		const h = makeHarness();
+		await h.fire("session_start", { type: "session_start", reason: "startup" });
+		assert.equal(h.state.statuses.persona, "🔒 Locked"); // env pin wins over remembered 'free'
+	} finally {
+		rmSync(stateFile, { force: true });
+		delete process.env.PI_PERSONA_STATE_FILE;
+	}
+});
+
+test("model/thinking are symmetric with tools: snapshot on override, restore when omitted", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "persona-tuned-"));
+	try {
+		writeFileSync(
+			join(dir, "tuned.md"),
+			[
+				"---",
+				"name: tuned",
+				'label: "Tuned"',
+				"persona: true",
+				"model: claude-pro-max-native/claude-opus-4-8",
+				"thinking: high",
+				"tools:",
+				'  allow: ["read"]',
+				"---",
+				"Tuned prompt.",
+			].join("\n"),
+		);
+		writeFileSync(
+			join(dir, "plain.md"),
+			["---", "name: plain", 'label: "Plain"', "persona: true", "---", "Plain prompt."].join("\n"),
+		);
+		setupEnv("tuned", dir);
+		const h = makeHarness();
+		await h.fire("session_start", { type: "session_start", reason: "startup" });
+		// tuned overrides all three axes
+		assert.equal(h.state.model.id, "claude-opus-4-8");
+		assert.equal(h.state.thinking, "high");
+		assert.deepEqual(h.state.activeTools, ["read"]);
+
+		// switching to a persona that declares NONE restores the session baseline
+		await h.runCommand("plain");
+		assert.equal(h.state.model.id, "base"); // restored (was opus)
+		assert.equal(h.state.thinking, "medium"); // restored (was high)
+		assert.ok(h.state.activeTools.includes("experimental_tool")); // full registry
+
+		// re-tune then clear: /persona off also restores model + thinking, not just tools
+		await h.runCommand("tuned");
+		assert.equal(h.state.model.id, "claude-opus-4-8");
+		assert.equal(h.state.thinking, "high");
+		await h.runCommand("off");
+		assert.equal(h.state.model.id, "base");
+		assert.equal(h.state.thinking, "medium");
+		assert.ok(h.state.activeTools.includes("experimental_tool"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("an operator file (no persona:true) is not loaded as a persona", async () => {
