@@ -7,16 +7,19 @@ A [Pi](https://github.com/earendil-works/pi-mono) **companion extension to
 switched with a key or `/persona`, and shown in the footer.
 
 > [!IMPORTANT]
-> **Requires [pi-subagents](https://github.com/nicobailon/pi-subagents) _and_
-> [pi-intercom](https://www.npmjs.com/package/pi-intercom)** — this is a companion,
-> not a standalone extension. Install both first:
+> **Requires [pi-subagents](https://github.com/nicobailon/pi-subagents)** — this is a
+> companion, not a standalone extension. For live, async **coaching** it also needs a
+> coordination bus:
+> **[pi-subagents-comtac](https://github.com/AeonDave/pi-subagents-comtac)** — a
+> cross-platform, drop-in replacement for the legacy `pi-intercom`.
 > ```bash
-> pi install npm:pi-subagents
-> pi install npm:pi-intercom
+> pi install npm:pi-subagents                               # delegation / chains / parallel
+> pi install git:github.com/AeonDave/pi-subagents-comtac    # async child→supervisor channel
+> pi install git:github.com/AeonDave/pi-subagents-persona   # this extension
 > ```
 > The delegation allowlist and the seeded supervisor personas only do anything with
-> pi-subagents present. **`pi-intercom` is what turns a supervisor persona into an
-> actual coach**: it carries `contact_supervisor` escalations from running children
+> pi-subagents present. **`pi-subagents-comtac` is what turns a supervisor persona into
+> an actual coach**: it carries `contact_supervisor` escalations from running children
 > and lets `resume` steer a still-running async child. Without it, delegation is
 > fire-and-forget — you can launch and read results, but not supervise live, so the
 > personas' active-coaching guidance has no channel to work over. (The
@@ -134,9 +137,11 @@ request.
 ## Install & use
 
 ```bash
-pi install npm:pi-subagents    # required: owns delegation / chains / parallel runs
-pi install npm:pi-intercom     # required: live coaching + child→supervisor escalation
-pi install .                   # this extension, from the repo root
+pi install npm:pi-subagents                               # required: owns delegation / chains / parallel runs
+pi install git:github.com/AeonDave/pi-subagents-comtac    # async coaching: child→supervisor escalation
+pi install git:github.com/AeonDave/pi-subagents-persona   # this extension
+# to hack on / test it locally instead of from GitHub:
+pi install <local path>                                   # e.g. `pi install .` from the repo root
 pi list
 ```
 
@@ -162,17 +167,18 @@ pi list
 | `PI_PERSONA_SEED` | `on` | Seed bundled personas/operators into the agents dir on startup; `off` disables. |
 | `PI_PERSONA_SEED_DIR` | `~/.pi/agent/agents` | Seed target + primary load dir. |
 
-## Relationship to pi-subagents (and pi-intercom)
+## Relationship to pi-subagents (and pi-subagents-comtac)
 
 Strictly a companion. pi-subagents owns agent definitions, delegation, chains,
-and parallel runs; pi-intercom owns the child↔supervisor coordination channel
-(`contact_supervisor`, live `resume`); this extension never reimplements either.
+and parallel runs; **pi-subagents-comtac** owns the child↔supervisor coordination
+channel (`contact_supervisor`, live `resume`) and is **needed for the async
+coaching** the personas assume; this extension never reimplements either.
 It only: injects the supervisor persona (Pi-core, provider-agnostic), and enforces
 the persona's delegation allowlist over pi-subagents' `subagent` tool (filter its
 `list` result, block out-of-list calls). It uses its own UI key (`persona`) so it
 never clobbers pi-subagents' `subagent-async` widget / `subagent-slash` status.
-Both companions are required (see the note at the top); the bundled supervisor
-personas assume async delegation + intercom coaching.
+pi-subagents is required; pi-subagents-comtac is required for live async coaching
+(the bundled supervisor personas assume an async, coached fleet).
 
 ## Development
 
